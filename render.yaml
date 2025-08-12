@@ -1,0 +1,38 @@
+# render.yaml
+services:
+  - type: web
+    name: stagescout-backend # This is the name of your service on Render
+    env: node
+    region: oregon # Choose a region close to your users (e.g., oregon, frankfurt, singapore, mumbai)
+    plan: free # Use the free tier for initial deployment
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: / # Basic health check for your root API endpoint
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000 # Your application will listen on this port internally
+      - key: MONGO_URI
+        sync: false # Set to false if you're going to manually add it as a secret
+        # value: mongodb+srv://<user>:<password>@yourcluster.mongodb.net/StageScoutDB?retryWrites=true&w=majority # Replace with your actual URI
+      - key: JWT_SECRET
+        sync: false # Set to false if you're going to manually add it as a secret
+        # value: your_super_long_and_random_jwt_secret # Replace with your actual secret
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+        # value: your_cloudinary_cloud_name
+      - key: CLOUDINARY_API_KEY
+        sync: false
+        # value: your_cloudinary_api_key
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+        # value: your_cloudinary_api_secret
+      - key: FRONTEND_URL
+        sync: false # This will be the live URL of your Vercel frontend, update on Render dashboard after Vercel deploy
+        # value: https://your-frontend-placeholder.vercel.app
+    # You can link a Render Disk if you need persistent storage for files (not needed for Cloudinary)
+    # disk:
+    #   name: my-backend-disk
+    #   mountPath: /data
+    #   sizeGB: 1

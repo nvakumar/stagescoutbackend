@@ -1,0 +1,14 @@
+# Python virtual environments
+venv/
+.venv/
+__pycache__/
+
+# Large binary files (if any were accidentally committed outside venv)
+*.dylib
+*.so
+*.dll
+*.exe
+
+# Node.js modules (should already be there)
+node_modules/
+.env
