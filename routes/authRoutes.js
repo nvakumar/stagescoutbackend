@@ -1,8 +1,8 @@
 import express from 'express';
 import { 
   registerUser, 
-  verifyToken, // 👈 Import verifyToken instead of loginUser
-  googleAuth,
+  loginUser, // 👈 Corrected import: 'loginUser'
+  googleAuth, // 👈 Corrected import: 'googleAuth'
   changePassword, 
   changeEmail,    
   deleteAccount   
@@ -21,8 +21,7 @@ router.post('/google', googleAuth);
 
 // 👇 THIS IS THE NEW LOGIN ROUTE 👇
 // Handles email/password login by verifying a Firebase ID token from the frontend
-router.post('/verify-token', verifyToken);
-
+router.post('/login', loginUser); // 👈 Corrected route handler
 
 // --- PROTECTED ROUTES (require a valid JWT) ---
 
