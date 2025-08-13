@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
     username: {
       type: String,
       unique: true,
+      sparse: true, // This is the fix. It allows multiple null values.
       lowercase: true,
       trim: true,
       minlength: 3,
