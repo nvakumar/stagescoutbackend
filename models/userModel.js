@@ -11,12 +11,11 @@ const userSchema = new mongoose.Schema(
     username: {
       type: String,
       unique: true,
-      sparse: true, // This is the fix. It allows multiple null values.
+      sparse: true,
       lowercase: true,
       trim: true,
       minlength: 3,
       match: [/^[a-z0-9_]+$/, 'Username can only contain lowercase letters, numbers, and underscores.'],
-      // Only required for non-new users
       required: function () {
         return !this.isNewUser;
       }
@@ -67,6 +66,13 @@ const userSchema = new mongoose.Schema(
     profilePictureUrl: {
       type: String,
       default: 'https://placehold.co/150x150/1a202c/ffffff?text=Avatar'
+    },
+
+    // ** THIS IS THE FIX **
+    // The missing field is now added to the schema.
+    coverPhotoUrl: {
+      type: String,
+      default: ''
     },
 
     resumeUrl: {
