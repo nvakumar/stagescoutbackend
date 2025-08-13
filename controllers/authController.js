@@ -4,9 +4,8 @@ import bcrypt from 'bcryptjs';
 import 'dotenv/config';
 import { sendVerificationEmail } from '../config/email.js';
 import admin from 'firebase-admin';
-
-// --- Firebase Admin SDK Setup ---
 import { createRequire } from 'module';
+
 const require = createRequire(import.meta.url);
 const serviceAccount = require('../firebase-adminsdk.json');
 
@@ -15,48 +14,21 @@ if (!admin.apps.length) {
     credential: admin.credential.cert(serviceAccount)
   });
 }
-// ---------------------------------
-
-// Helper function to generate a unique username
-const generateUniqueUsername = async (fullName) => {
-  let username = fullName.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/gi, '');
-  if (username.length < 3) {
-    username = `user${Math.floor(1000 + Math.random() * 9000)}`;
-  }
-  let existingUser = await User.findOne({ username });
-  let attempts = 0;
-  while (existingUser && attempts < 5) {
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const newUsername = `${username}${randomSuffix}`;
-    existingUser = await User.findOne({ username: newUsername });
-    if (!existingUser) {
-      username = newUsername;
-      break;
-    }
-    attempts++;
-  }
-  if (existingUser) {
-      username = `user${Date.now()}`;
-  }
-  return username;
-};
-
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
 // @access  Public
 export const registerUser = async (req, res) => {
-  // Now correctly accepts 'username' from the frontend form
   const { fullName, username, email, password, role, location } = req.body;
 
   try {
-    const userExists = await User.findOne({ email });
+    let userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ message: 'User already exists with this email.' });
     }
-    const usernameExists = await User.findOne({ username });
-    if (usernameExists) {
-        return res.status(400).json({ message: 'Username is already taken.' });
+    userExists = await User.findOne({ username });
+    if (userExists) {
+        return res.status(400).json({ message: 'This username is already taken.' });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -64,19 +36,20 @@ export const registerUser = async (req, res) => {
 
     const user = await User.create({
       fullName,
-      username, // Saves the username from the form
+      username,
       email,
       role,
       location,
       password: hashedPassword,
       isVerified: false,
+      isNewUser: false, // They have completed the form, so they are not "new" in the context of needing to complete a profile.
     });
 
     if (user) {
       await admin.auth().createUser({
         uid: user._id.toString(),
         email: user.email,
-        password: password,
+        password,
         emailVerified: false,
         displayName: user.fullName,
       });
@@ -97,37 +70,70 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// @desc    Verify Firebase ID token and log user in
-// @route   POST /api/auth/verify-token
+// @desc    Authenticate a user
+// @route   POST /api/auth/login
 // @access  Public
-export const verifyToken = async (req, res) => {
-  const { idToken } = req.body;
+export const loginUser = async (req, res) => {
+  const { email, password } = req.body;
 
   try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const user = await User.findById(decodedToken.uid);
+    let user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found in our database." });
+      return res.status(400).json({ message: 'Invalid credentials' });
     }
+
+    let firebaseUser;
+    try {
+      firebaseUser = await admin.auth().getUser(user._id.toString());
+    } catch (fbErr) {
+      if (fbErr.code === 'auth/user-not-found') {
+        return res.status(400).json({ message: 'User not found in authentication system.' });
+      }
+      throw fbErr;
+    }
+
+    if (!firebaseUser.emailVerified) {
+      return res.status(401).json({ message: 'Please verify your email address to log in.' });
+    }
+
+    let passwordMatches = false;
+    if (user.password) {
+      passwordMatches = await bcrypt.compare(password, user.password);
+    }
+
+    if (!passwordMatches) {
+      try {
+        await admin.auth().verifyIdToken(
+          (await admin.auth().createCustomToken(firebaseUser.uid)).toString()
+        );
+      } catch {
+        return res.status(400).json({ message: 'Invalid credentials' });
+      }
+
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(password, salt);
+      await user.save();
+    }
+
+    const needsProfileCompletion = !user.username;
 
     res.status(200).json({
       _id: user._id,
       fullName: user.fullName,
-      username: user.username,
       email: user.email,
       role: user.role,
       profilePictureUrl: user.profilePictureUrl,
       location: user.location,
       token: generateToken(user._id),
+      needsProfileCompletion,
     });
 
   } catch (error) {
-    console.error("Error verifying token:", error);
-    res.status(401).json({ message: 'Authentication failed. Invalid token.' });
+    console.error("Error during login:", error);
+    res.status(500).json({ message: 'Server Error', error: error.message });
   }
 };
-
 
 // @desc    Google Sign-In/Up
 // @route   POST /api/auth/google
@@ -137,26 +143,87 @@ export const googleAuth = async (req, res) => {
 
   try {
     const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const { email, name } = decodedToken; 
+    const { email, name, picture, uid } = decodedToken;
 
     let user = await User.findOne({ email });
     let isNewUser = false;
 
     if (!user) {
       isNewUser = true;
-      // 👇 THIS IS THE FIX 👇
-      // Generate a unique username for the new Google user.
-      const username = await generateUniqueUsername(name);
-      
+      const tempUsername = `user_${uid.substring(0, 12)}`;
+
       user = await User.create({
         fullName: name,
-        username: username, // 👈 Save the new username
-        email: email,
+        email,
+        username: tempUsername,
         role: 'Creator',
         isVerified: true,
+        // ** THIS IS THE FIX **
+        // The 'picture' variable from Google is no longer used.
+        // It will now always use the default placeholder defined in your userModel.
+        profilePictureUrl: 'https://placehold.co/150x150/1a202c/ffffff?text=Avatar',
+        isNewUser: true,
       });
+
+      // Ensure a Firebase Auth user exists with the correct UID from the token
+      try {
+        await admin.auth().getUser(uid);
+      } catch (error) {
+        if (error.code === 'auth/user-not-found') {
+          await admin.auth().createUser({
+            uid: uid,
+            email: email,
+            displayName: name,
+            photoURL: picture,
+            emailVerified: true,
+          });
+        } else {
+          throw error;
+        }
+      }
     }
-    
+
+    const needsProfileCompletion = isNewUser;
+
+    res.status(200).json({
+      _id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      role: user.role,
+      location: user.location,
+      profilePictureUrl: user.profilePictureUrl,
+      token: generateToken(user._id),
+      needsProfileCompletion,
+    });
+
+  } catch (error) {
+    console.error("Error during Google Auth:", error);
+    if (error.code && error.code.startsWith('auth/')) {
+      return res.status(401).json({ message: 'Google authentication failed. Invalid token.' });
+    }
+    res.status(500).json({ message: 'Server Error during Google authentication.', error: error.message });
+  }
+};
+
+// @desc    Verify user token and get user data
+// @route   POST /api/auth/verify-token
+// @access  Public (but requires a token)
+export const verifyToken = async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const needsProfileCompletion = user.isNewUser;
+
     res.status(200).json({
       _id: user._id,
       fullName: user.fullName,
@@ -165,15 +232,15 @@ export const googleAuth = async (req, res) => {
       role: user.role,
       location: user.location,
       profilePictureUrl: user.profilePictureUrl,
-      token: generateToken(user._id),
-      isNewUser: isNewUser,
+      token: token,
+      needsProfileCompletion,
     });
 
   } catch (error) {
-    console.error("Error during Google Auth:", error);
-    res.status(401).json({ message: 'Google authentication failed. Invalid token.' });
+    res.status(401).json({ message: 'Token is not valid or has expired' });
   }
 };
+
 
 // @desc    Change user password
 // @route   PUT /api/auth/change-password
@@ -188,7 +255,7 @@ export const changePassword = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    
+
     if (user.password && !(await bcrypt.compare(currentPassword, user.password))) {
       return res.status(400).json({ message: 'Current password is incorrect' });
     }
@@ -196,7 +263,7 @@ export const changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
-    
+
     await admin.auth().updateUser(userId.toString(), {
       password: newPassword
     });
@@ -233,7 +300,7 @@ export const changeEmail = async (req, res) => {
 
     user.email = newEmail;
     await user.save();
-    
+
     await admin.auth().updateUser(userId.toString(), {
       email: newEmail
     });
@@ -262,7 +329,7 @@ export const deleteAccount = async (req, res) => {
     if (user.password && !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ message: 'Password is incorrect' });
     }
-    
+
     await admin.auth().deleteUser(userId.toString());
     await user.deleteOne();
 
@@ -273,8 +340,6 @@ export const deleteAccount = async (req, res) => {
   }
 };
 
-
-// Helper function to generate a JWT
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d',
