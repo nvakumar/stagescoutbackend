@@ -6,7 +6,7 @@ import Post from '../models/postModel.js';
 // @access  Public
 const getUserProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('fullName username email role bio skills profilePictureUrl resumeUrl followers following location coverPhotoUrl'); 
+    const user = await User.findById(req.params.id).select('fullName username email role bio skills profilePictureUrl resumeUrl followers following location coverPhotoUrl');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
@@ -14,7 +14,7 @@ const getUserProfile = async (req, res) => {
 
     const posts = await Post.find({ user: req.params.id })
       .sort({ createdAt: -1 })
-      .populate('user', 'fullName role avatar'); 
+      .populate('user', 'fullName role avatar');
 
     res.status(200).json({
       user,
@@ -37,7 +37,7 @@ const searchUsers = async (req, res) => {
     const roleFilter = req.query.role;
     const locationFilter = req.query.location;
 
-    if (!query && (!roleFilter || roleFilter === 'All Roles') && !locationFilter) { 
+    if (!query && (!roleFilter || roleFilter === 'All Roles') && !locationFilter) {
         return res.status(400).json({ message: 'Search query or specific filters are required' });
     }
 
@@ -62,7 +62,7 @@ const searchUsers = async (req, res) => {
 
         const users = await User.find(findQuery)
                                 .select('fullName role profilePictureUrl location')
-                                .sort({ fullName: 1 }); 
+                                .sort({ fullName: 1 });
 
         res.status(200).json(users);
 
@@ -152,8 +152,9 @@ const unfollowUser = async (req, res) => {
 const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user._id;
-    // 👇 FIX: Removed 'username' from this function to enforce using the dedicated route
-    const { fullName, bio, skills, profilePictureUrl, resumeUrl, location } = req.body;
+    // ** THIS IS THE FIX **
+    // 1. Destructure 'coverPhotoUrl' from the request body.
+    const { fullName, bio, skills, profilePictureUrl, resumeUrl, location, coverPhotoUrl } = req.body;
 
     const user = await User.findById(userId);
 
@@ -164,6 +165,8 @@ const updateUserProfile = async (req, res) => {
       user.profilePictureUrl = profilePictureUrl !== undefined ? profilePictureUrl : user.profilePictureUrl;
       user.resumeUrl = resumeUrl !== undefined ? resumeUrl : user.resumeUrl;
       user.location = location !== undefined ? location : user.location;
+      // 2. If a new coverPhotoUrl is provided, update the user object.
+      user.coverPhotoUrl = coverPhotoUrl !== undefined ? coverPhotoUrl : user.coverPhotoUrl;
 
       const updatedUser = await user.save();
 
@@ -186,10 +189,8 @@ const updateNewUserProfile = async (req, res) => {
     const user = await User.findById(req.user._id);
 
     if (user) {
-      // 👇 FIX: Get username from the request body
       const { role, location, username } = req.body;
 
-      // Check if the new username is already taken
       if (username) {
         const usernameExists = await User.findOne({ username });
         if (usernameExists && usernameExists._id.toString() !== user._id.toString()) {
@@ -203,12 +204,11 @@ const updateNewUserProfile = async (req, res) => {
 
       const updatedUser = await user.save();
 
-      // Return the full user object so the frontend state is updated
       res.status(200).json({
         _id: updatedUser._id,
         fullName: updatedUser.fullName,
         email: updatedUser.email,
-        username: updatedUser.username, // 👈 Ensure username is in the response
+        username: updatedUser.username,
         role: updatedUser.role,
         location: updatedUser.location,
         profilePictureUrl: updatedUser.profilePictureUrl,
@@ -341,15 +341,15 @@ const uploadUserCoverPhoto = async (req, res) => {
 };
 
 
-export { 
-  getUserProfile, 
-  searchUsers, 
-  followUser, 
-  unfollowUser, 
+export {
+  getUserProfile,
+  searchUsers,
+  followUser,
+  unfollowUser,
   updateUserProfile,
   updateNewUserProfile,
   updateUsername,
-  uploadUserAvatar, 
+  uploadUserAvatar,
   uploadUserResume,
   uploadUserCoverPhoto
 };
