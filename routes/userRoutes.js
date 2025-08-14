@@ -6,10 +6,11 @@ import {
   unfollowUser,
   updateUserProfile,
   updateNewUserProfile,
-  updateUsername, // 👈 Import the new username controller function
+  updateUsername,
   uploadUserAvatar,
   uploadUserResume,
-  uploadUserCoverPhoto
+  uploadUserCoverPhoto,
+  getUsersByIds // 👈 IMPORT the new controller function
 } from '../controllers/userController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import multer from 'multer';
@@ -34,10 +35,14 @@ router.route('/me').put(protect, updateUserProfile);
 // Route to update a new user's profile after Google Sign-Up
 router.route('/profile').put(protect, updateNewUserProfile);
 
-// 👇 ADD THIS NEW ROUTE FOR UPDATING THE USERNAME 👇
+// Route for updating the username
 router.route('/username').put(protect, updateUsername);
 
-// Route to get a user's profile by their ID (publicly accessible)
+// 👇 THIS IS THE NEW, REQUIRED ROUTE 👇
+// Handles fetching multiple users' data in a single request for follower/following lists.
+router.route('/bulk').post(protect, getUsersByIds);
+
+// Route to get a user's profile by their ID (must be last to avoid conflicts with other routes)
 router.route('/:id').get(getUserProfile); 
 
 // --- FOLLOW / UNFOLLOW ROUTES ---
