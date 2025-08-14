@@ -152,8 +152,6 @@ const unfollowUser = async (req, res) => {
 const updateUserProfile = async (req, res) => {
   try {
     const userId = req.user._id;
-    // ** THIS IS THE FIX **
-    // 1. Destructure 'coverPhotoUrl' from the request body.
     const { fullName, bio, skills, profilePictureUrl, resumeUrl, location, coverPhotoUrl } = req.body;
 
     const user = await User.findById(userId);
@@ -165,7 +163,6 @@ const updateUserProfile = async (req, res) => {
       user.profilePictureUrl = profilePictureUrl !== undefined ? profilePictureUrl : user.profilePictureUrl;
       user.resumeUrl = resumeUrl !== undefined ? resumeUrl : user.resumeUrl;
       user.location = location !== undefined ? location : user.location;
-      // 2. If a new coverPhotoUrl is provided, update the user object.
       user.coverPhotoUrl = coverPhotoUrl !== undefined ? coverPhotoUrl : user.coverPhotoUrl;
 
       const updatedUser = await user.save();
@@ -340,7 +337,32 @@ const uploadUserCoverPhoto = async (req, res) => {
   }
 };
 
+// @desc    Get multiple users by their IDs
+// @route   POST /api/users/bulk
+// @access  Private
+const getUsersByIds = async (req, res) => {
+  const { ids } = req.body;
 
+  if (!ids || !Array.isArray(ids)) {
+    return res.status(400).json({ message: 'User IDs must be provided in an array.' });
+  }
+
+  try {
+    const users = await User.find({ '_id': { $in: ids } }).select(
+      'fullName username role profilePictureUrl location'
+    );
+    
+    res.status(200).json(users);
+
+  } catch (error) {
+    console.error("Error fetching users by IDs:", error);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
+// 👇 THIS IS THE FIX 👇
+// The `export` keyword is removed from each function definition above.
+// All functions are now exported in a single block at the end for consistency.
 export {
   getUserProfile,
   searchUsers,
@@ -351,5 +373,6 @@ export {
   updateUsername,
   uploadUserAvatar,
   uploadUserResume,
-  uploadUserCoverPhoto
+  uploadUserCoverPhoto,
+  getUsersByIds // The new function is included here, but only once.
 };
